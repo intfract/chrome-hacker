@@ -12,6 +12,10 @@ pip install pywin32
 pip install pycryptodomex
 ```
 
+### Config
+
+A `config.json` file is required if `SHOULD_POST` is set to `True`. The file must contain a `key` property with your endpoint's API key or token. You can always modify the code to suit your needs. 
+
 ### Run Python File
 
 Make sure you are in the same directory as your python file before you run this command.
